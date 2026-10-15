@@ -33,7 +33,7 @@ func (bot *Bot) gameStateResponse(dgs *GameState, sett *settings.GuildSettings) 
 
 // statusContent renders a game's whole status message: its embed and the controls under it.
 func (bot *Bot) statusContent(dgs *GameState, sett *settings.GuildSettings) statusContent {
-	return statusContent{embed: bot.gameStateResponse(dgs, sett), components: dgs.statusComponents(sett)}
+	return statusContent{embed: bot.gameStateResponse(dgs, sett), components: dgs.statusComponents(bot.StatusEmojis, sett)}
 }
 
 func lobbyMetaEmbedFields(room, region string, author, voiceChannelID string, playerCount int, linkedPlayers int, sett *settings.GuildSettings) []*discordgo.MessageEmbedField {

@@ -367,7 +367,7 @@ func (m *model) playerForm() tea.Cmd {
 			m.appendLog(logEntry{entrySent, playerLabel(p.Name, p.Action, p.Color)})
 			return nil
 		}, huh.NewGroup(
-			selectOf("Color", colorOptions, &p.Color).Height(8),
+			selectOf("Color", colorOptions(), &p.Color).Height(8),
 			huh.NewConfirm().Title("Is dead?").Value(&p.IsDead),
 			huh.NewConfirm().Title("Disconnected?").Value(&p.Disconnected),
 			huh.NewConfirm().Title("Is impostor?").Description("Sent at gameover").Value(&impostor),
@@ -419,16 +419,15 @@ var (
 		entryFail:     {"✗ ", lipgloss.NewStyle().Foreground(bad)},
 		entryError:    {"! ", errStyle},
 	}
-
-	// Among Us player colors, for the roster swatches.
-	playerColors = map[int]string{
-		game.Red: "#C51111", game.Blue: "#132ED1", game.Green: "#117F2D", game.Pink: "#ED54BA",
-		game.Orange: "#EF7D0D", game.Yellow: "#F5F557", game.Black: "#3F474E", game.White: "#D6E0F0",
-		game.Purple: "#6B2FBB", game.Brown: "#71491E", game.Cyan: "#38FEDC", game.Lime: "#50EF39",
-		game.Maroon: "#6B2B3C", game.Rose: "#ECC0D3", game.Banana: "#FFFEBE", game.Gray: "#708496",
-		game.Tan: "#928776", game.Coral: "#EC7578",
-	}
 )
+
+// playerColor is an Among Us player color as hex, for the roster swatches; empty for a color without one.
+func playerColor(id int) string {
+	if !game.IsValidColor(id) {
+		return ""
+	}
+	return game.Colors()[id].Hex
+}
 
 func (m *model) showPanel() bool { return m.width >= 80 }
 
@@ -614,7 +613,7 @@ func (m *model) panelView(width int) string {
 	}
 	b.WriteString("\n" + dimStyle.Render(fmt.Sprintf("Players (%d)", len(v.players))) + "\n")
 	for _, p := range v.players {
-		swatch := lipgloss.NewStyle().Foreground(lipgloss.Color(playerColors[p.Color])).Render("●")
+		swatch := lipgloss.NewStyle().Foreground(lipgloss.Color(playerColor(p.Color))).Render("●")
 		name := p.Name
 		var tags []string
 		if p.IsDead {

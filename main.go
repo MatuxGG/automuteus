@@ -19,6 +19,7 @@ import (
 	"github.com/automuteus/automuteus/v8/bot/tokenprovider"
 	"github.com/automuteus/automuteus/v8/internal/server"
 	"github.com/automuteus/automuteus/v8/pkg/capture"
+	"github.com/automuteus/automuteus/v8/pkg/game"
 	"github.com/automuteus/automuteus/v8/pkg/locale"
 	"github.com/automuteus/automuteus/v8/pkg/logging"
 	"github.com/automuteus/automuteus/v8/pkg/premium"
@@ -82,6 +83,17 @@ func discordMainWrapper() error {
 	logging.Setup(logOut)
 
 	emojiGuildID := os.Getenv("EMOJI_GUILD_ID")
+
+	// before the bots are made: their emojis and the commands they register follow the color table
+	if colorsPath := os.Getenv("CUSTOM_COLORS_PATH"); colorsPath != "" {
+		custom, err := game.LoadCustomColors(colorsPath)
+		if err != nil {
+			return fmt.Errorf("CUSTOM_COLORS_PATH %s: %w", colorsPath, err)
+		}
+		log.Printf("Loaded %d custom colors from %s; the emoji guild needs room for %d color emojis\n",
+			len(custom), colorsPath, 2*game.ColorCount())
+		command.UpdateColorChoices()
+	}
 
 	log.Println(version + "-" + commit)
 

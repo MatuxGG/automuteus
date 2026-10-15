@@ -102,15 +102,28 @@ func constructEmbedForCommand(
 	}
 }
 
+// maxCommandChoices is the most choices Discord allows on a command option.
+const maxCommandChoices = 25
+
+// colorsToCommandChoices lists the colors as /link's choices. A custom color table with more colors than Discord
+// allows leaves the option without choices, so any color name can be typed.
 func colorsToCommandChoices() []*discordgo.ApplicationCommandOptionChoice {
+	if game.ColorCount() > maxCommandChoices {
+		return nil
+	}
 	var choices []*discordgo.ApplicationCommandOptionChoice
-	for color := range game.ColorStrings {
+	for _, color := range game.Colors() {
 		choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
-			Name:  color,
-			Value: color,
+			Name:  color.Name,
+			Value: color.Name,
 		})
 	}
 	return choices
+}
+
+// UpdateColorChoices rebuilds /link's color choices from the color table, for a custom table loaded at startup.
+func UpdateColorChoices() {
+	Link.Options[1].Choices = colorsToCommandChoices()
 }
 
 func mapsToCommandChoices() []*discordgo.ApplicationCommandOptionChoice {

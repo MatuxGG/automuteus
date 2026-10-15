@@ -2,9 +2,11 @@ package bot
 
 import (
 	"encoding/base64"
+	"errors"
 	"io"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/automuteus/automuteus/v8/pkg/game"
 
@@ -16,16 +18,23 @@ const (
 	X               = "❌"
 	ThumbsUp        = "👍"
 	Hourglass       = "⌛"
+	// MissingEmoji stands in for a color's emoji when the emoji guild has none and the bot couldn't upload it
+	MissingEmoji = "❔"
 )
 
 // Emoji struct for discord
 type Emoji struct {
 	Name string
 	ID   string
+	// imagePath is the file uploaded for a custom color's emoji; vanilla emojis are copied from the official bot's
+	imagePath string
 }
 
 // FormatForInline does what it sounds like
 func (e *Emoji) FormatForInline() string {
+	if e.ID == "" {
+		return MissingEmoji
+	}
 	return "<:" + e.Name + ":" + e.ID + ">"
 }
 
@@ -48,6 +57,18 @@ func (e *Emoji) DownloadAndBase64Encode() string {
 	}
 	encodedStr := base64.StdEncoding.EncodeToString(bytes)
 	return "data:image/png;base64," + encodedStr
+}
+
+// imageData is the emoji's image as a data URI, for uploading it to the emoji guild
+func (e *Emoji) imageData() (string, error) {
+	if e.imagePath == "" {
+		return e.DownloadAndBase64Encode(), nil
+	}
+	bytes, err := os.ReadFile(e.imagePath)
+	if err != nil {
+		return "", err
+	}
+	return "data:" + http.DetectContentType(bytes) + ";base64," + base64.StdEncoding.EncodeToString(bytes), nil
 }
 
 func (a AlivenessEmojis) isEmpty() bool {
@@ -74,13 +95,66 @@ func (a AlivenessEmojis) isEmpty() bool {
 
 func emptyStatusEmojis() AlivenessEmojis {
 	topMap := make(AlivenessEmojis)
-	topMap[true] = make([]Emoji, 18) // 18 colors for alive/dead
-	topMap[false] = make([]Emoji, 18)
+	topMap[true] = make([]Emoji, game.ColorCount()) // one per color for alive/dead
+	topMap[false] = make([]Emoji, game.ColorCount())
 	return topMap
 }
 
-func (bot *Bot) verifyEmojis(s *discordgo.Session, guildID string, alive bool, serverEmojis []*discordgo.Emoji, add bool) {
-	for i, emoji := range GlobalAlivenessEmojis[alive] {
+// knownEmojis are the emojis of every color in the table: the vanilla ones as the official bot has them, then
+// the custom colors', which have no ID until the bot finds or uploads them in the emoji guild.
+func knownEmojis() AlivenessEmojis {
+	known := AlivenessEmojis{
+		true:  append([]Emoji(nil), GlobalAlivenessEmojis[true]...),
+		false: append([]Emoji(nil), GlobalAlivenessEmojis[false]...),
+	}
+	for _, c := range game.Colors()[game.VanillaColorCount:] {
+		known[true] = append(known[true], Emoji{Name: "au" + c.Name, imagePath: c.AliveImage})
+		known[false] = append(known[false], Emoji{Name: "au" + c.Name + "dead", imagePath: c.DeadImage})
+	}
+	return known
+}
+
+// get is the emoji for a color, or an empty one (shown as MissingEmoji) when there is none
+func (a AlivenessEmojis) get(alive bool, color int) Emoji {
+	if color < 0 || color >= len(a[alive]) {
+		return Emoji{}
+	}
+	return a[alive][color]
+}
+
+// emojiCreator uploads emojis to a guild, as *discordgo.Session does
+type emojiCreator interface {
+	GuildEmojiCreate(guildID string, data *discordgo.EmojiParams, options ...discordgo.RequestOption) (*discordgo.Emoji, error)
+}
+
+// missing counts the colors' emojis that have no ID, so show as MissingEmoji
+func (a AlivenessEmojis) missing() (n int) {
+	for _, emojis := range a {
+		for _, e := range emojis {
+			if e.ID == "" {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// syncEmojis finds the color emojis in the emoji guild, uploading those it lacks when add is set. The alive emojis
+// go first, as the color select shows them too, so a guild without room for every color loses dead emojis first.
+func (bot *Bot) syncEmojis(s emojiCreator, guildID string, serverEmojis []*discordgo.Emoji, add bool) {
+	full := bot.verifyEmojis(s, guildID, true, serverEmojis, add)
+	if bot.verifyEmojis(s, guildID, false, serverEmojis, add && !full) {
+		full = true
+	}
+	if full {
+		log.Printf("Emoji guild %s has no emoji slots left: %d color emojis show as %s. Free or add slots (boosting raises the limit), and the bot uploads them the next time it starts\n",
+			guildID, bot.StatusEmojis.missing(), MissingEmoji)
+	}
+}
+
+// verifyEmojis reports whether the guild ran out of emoji slots, after which it stops uploading
+func (bot *Bot) verifyEmojis(s emojiCreator, guildID string, alive bool, serverEmojis []*discordgo.Emoji, add bool) (full bool) {
+	for i, emoji := range knownEmojis()[alive] {
 		alreadyExists := false
 		for _, v := range serverEmojis {
 			if v.Name == emoji.Name {
@@ -90,15 +164,26 @@ func (bot *Bot) verifyEmojis(s *discordgo.Session, guildID string, alive bool, s
 				break
 			}
 		}
-		if add && !alreadyExists {
-			b64 := emoji.DownloadAndBase64Encode()
+		if add && !full && !alreadyExists {
+			if emoji.ID == "" && emoji.imagePath == "" {
+				log.Printf("Emoji %s is not in the emoji guild, and its color has no image to upload\n", emoji.Name)
+				continue
+			}
+			b64, err := emoji.imageData()
+			if err != nil {
+				log.Println(err)
+				continue
+			}
 			p := discordgo.EmojiParams{
 				Name:  emoji.Name,
 				Image: b64,
 				Roles: nil,
 			}
 			em, err := s.GuildEmojiCreate(guildID, &p)
-			if err != nil {
+			var restErr *discordgo.RESTError
+			if errors.As(err, &restErr) && restErr.Message != nil && restErr.Message.Code == discordgo.ErrCodeMaximumNumberOfEmojisReached {
+				full = true
+			} else if err != nil {
 				log.Println(err)
 			} else {
 				log.Printf("Added emoji %s successfully!\n", emoji.Name)
@@ -107,11 +192,17 @@ func (bot *Bot) verifyEmojis(s *discordgo.Session, guildID string, alive bool, s
 			}
 		}
 	}
+	return full
 }
 
-func EmojisToSelectMenuOptions(emojis []Emoji, unlinkEmoji string) (arr []discordgo.SelectMenuOption) {
-	for i, v := range emojis {
-		arr = append(arr, v.toSelectMenuOption(game.GetColorStringForInt(i)))
+// EmojisToSelectMenuOptions lists the given colors, each with its emoji from emojis (indexed by color)
+func EmojisToSelectMenuOptions(emojis []Emoji, colors []int, unlinkEmoji string) (arr []discordgo.SelectMenuOption) {
+	for _, c := range colors {
+		var emoji Emoji
+		if c >= 0 && c < len(emojis) {
+			emoji = emojis[c]
+		}
+		arr = append(arr, emoji.toSelectMenuOption(game.GetColorStringForInt(c)))
 	}
 	arr = append(arr, discordgo.SelectMenuOption{
 		Label:   "unlink",
@@ -123,10 +214,14 @@ func EmojisToSelectMenuOptions(emojis []Emoji, unlinkEmoji string) (arr []discor
 }
 
 func (e Emoji) toSelectMenuOption(displayName string) discordgo.SelectMenuOption {
+	emoji := discordgo.ComponentEmoji{ID: e.ID}
+	if e.ID == "" {
+		emoji = discordgo.ComponentEmoji{Name: MissingEmoji}
+	}
 	return discordgo.SelectMenuOption{
 		Label:   displayName,
 		Value:   displayName, // use the Name for listen events later
-		Emoji:   discordgo.ComponentEmoji{ID: e.ID},
+		Emoji:   emoji,
 		Default: false,
 	}
 }

@@ -3,6 +3,7 @@ package bot
 import (
 	"fmt"
 	"github.com/automuteus/automuteus/v8/pkg/amongus"
+	"github.com/automuteus/automuteus/v8/pkg/game"
 	"github.com/automuteus/automuteus/v8/pkg/settings"
 	"github.com/bwmarrin/discordgo"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
@@ -81,16 +82,16 @@ func (dgs *GameState) checkCacheAndAddUser(g *discordgo.Guild, s DiscordClient, 
 }
 
 func (dgs *GameState) ToEmojiEmbedFields(emojis AlivenessEmojis, sett *settings.GuildSettings) []*discordgo.MessageEmbedField {
-	unsorted := make([]*discordgo.MessageEmbedField, 18)
+	unsorted := make([]*discordgo.MessageEmbedField, game.ColorCount())
 	num := 0
 
 	for _, player := range dgs.GameData.PlayerData {
-		if player.Color < 0 || player.Color > 17 {
-			break
+		if !game.IsValidColor(player.Color) {
+			continue
 		}
 		for _, userData := range dgs.UserData {
 			if userData.InGameName == player.Name {
-				emoji := emojis[player.IsAlive][player.Color]
+				emoji := emojis.get(player.IsAlive, player.Color)
 				unsorted[player.Color] = &discordgo.MessageEmbedField{
 					Name:   player.Name,
 					Value:  fmt.Sprintf("%s <@!%s>", emoji.FormatForInline(), userData.GetID()),
@@ -101,7 +102,7 @@ func (dgs *GameState) ToEmojiEmbedFields(emojis AlivenessEmojis, sett *settings.
 		}
 		// no player matched; unlinked player
 		if unsorted[player.Color] == nil {
-			emoji := emojis[player.IsAlive][player.Color]
+			emoji := emojis.get(player.IsAlive, player.Color)
 			unsorted[player.Color] = &discordgo.MessageEmbedField{
 				Name: player.Name,
 				Value: fmt.Sprintf("%s **%s**", emoji.FormatForInline(), sett.LocalizeMessage(&i18n.Message{
@@ -116,7 +117,7 @@ func (dgs *GameState) ToEmojiEmbedFields(emojis AlivenessEmojis, sett *settings.
 
 	sorted := make([]*discordgo.MessageEmbedField, num)
 	num = 0
-	for i := 0; i < 18; i++ {
+	for i := range unsorted {
 		if unsorted[i] != nil {
 			sorted[num] = unsorted[i]
 			num++

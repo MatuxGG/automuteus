@@ -1,10 +1,12 @@
 package bot
 
 import (
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/automuteus/automuteus/v8/internal/server"
+	"github.com/automuteus/automuteus/v8/pkg/game"
 	"github.com/automuteus/automuteus/v8/pkg/settings"
 
 	"github.com/bwmarrin/discordgo"
@@ -117,20 +119,54 @@ func deferredEditWorker(s DiscordClient, sleep func(time.Duration), channelID, m
 }
 
 // statusComponents are the controls under a game's status message: the color select, and the reminder's dismiss
-// button while it has one.
-func (dgs *GameState) statusComponents(sett *settings.GuildSettings) []discordgo.MessageComponent {
+// button while it has one. verified are the emojis the bot found in its emoji guild, which supply the custom colors'.
+func (dgs *GameState) statusComponents(verified AlivenessEmojis, sett *settings.GuildSettings) []discordgo.MessageComponent {
+	emojis := knownEmojis()[true]
+	for i := range emojis {
+		if emojis[i].ID == "" {
+			emojis[i] = verified.get(true, i)
+		}
+	}
 	components := []discordgo.MessageComponent{
 		discordgo.ActionsRow{
 			Components: []discordgo.MessageComponent{
 				discordgo.SelectMenu{
 					CustomID:    colorSelectID,
 					Placeholder: "Select your in-game color",
-					Options:     EmojisToSelectMenuOptions(GlobalAlivenessEmojis[true], X),
+					Options:     EmojisToSelectMenuOptions(emojis, dgs.selectableColors(), X),
 				},
 			},
 		},
 	}
 	return append(components, reminderComponents(dgs.Reminder, sett)...)
+}
+
+// maxSelectColors is how many colors fit in the color select beside its unlink option; Discord allows 25 options.
+const maxSelectColors = 24
+
+// selectableColors are the colors offered in the color select. All of them fit unless a custom color table is
+// larger, in which case only the colors of the game's players are offered.
+func (dgs *GameState) selectableColors() []int {
+	if game.ColorCount() <= maxSelectColors {
+		all := make([]int, game.ColorCount())
+		for i := range all {
+			all[i] = i
+		}
+		return all
+	}
+	seen := make(map[int]bool)
+	var inGame []int
+	for _, player := range dgs.GameData.PlayerData {
+		if game.IsValidColor(player.Color) && !seen[player.Color] {
+			seen[player.Color] = true
+			inGame = append(inGame, player.Color)
+		}
+	}
+	sort.Ints(inGame)
+	if len(inGame) > maxSelectColors {
+		inGame = inGame[:maxSelectColors]
+	}
+	return inGame
 }
 
 func (dgs *GameState) CreateMessage(s DiscordClient, content statusContent, channelID string, authorID string) bool {

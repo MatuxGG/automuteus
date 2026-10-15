@@ -1,0 +1,25 @@
+# Colors added by an Among Us mod, for CUSTOM_COLORS_PATH. Copy this file and list the mod's colors.
+#
+# id           The number the capture reports for the color. Mods number the colors they add after the 18 vanilla
+#              ones, so the first is 18 and the rest follow without gaps, in the mod's order. Check them against the
+#              mod version your lobby plays.
+# name         What players pick in Discord: 1 to 26 lowercase letters, digits or underscores, unique among all
+#              colors. The color's emojis are named au<name> and au<name>dead.
+# hex          Optional #RRGGBB, used by the capture mock's swatches.
+# alive_image  Optional images uploaded as the color's emojis when the emoji guild lacks them. PNG, GIF, JPEG or
+# dead_image   WebP, up to 256 KiB. Relative paths start from this file's directory. Without them, upload emojis
+#              named au<name> and au<name>dead to the emoji guild yourself; a missing one shows as ❔.
+
+[[colors]]
+id = 18
+name = "watermelon"
+hex = "#A8323C"
+alive_image = "emojis/auwatermelon.png"
+dead_image = "emojis/auwatermelondead.png"
+
+[[colors]]
+id = 19
+name = "chocolate"
+hex = "#3C2014"
+alive_image = "emojis/auchocolate.png"
+dead_image = "emojis/auchocolatedead.png"

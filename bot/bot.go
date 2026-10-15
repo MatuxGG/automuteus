@@ -225,8 +225,7 @@ func (bot *Bot) newGuild(emojiGuildID string) func(s *discordgo.Session, m *disc
 			if err != nil {
 				log.Println(err)
 			} else {
-				bot.verifyEmojis(s, emojiGuildID, true, allEmojis, uploadMissingEmojis)
-				bot.verifyEmojis(s, emojiGuildID, false, allEmojis, uploadMissingEmojis)
+				bot.syncEmojis(s, emojiGuildID, allEmojis, uploadMissingEmojis)
 			}
 		}
 		EmojiLock.Unlock()

@@ -60,11 +60,13 @@ var (
 	phaseOptions  = options(game.PhaseNames)
 	actionOptions = options(actionNames)
 	resultOptions = options(resultNames)
-	colorOptions  = func() []option[int] {
-		names := make(map[int]string, len(game.ColorStrings))
-		for label, value := range game.ColorStrings {
-			names[value] = label
-		}
-		return options(names)
-	}()
 )
+
+// colorOptions follows the color table, which a custom table changes at startup.
+func colorOptions() []option[int] {
+	names := make(map[int]string, game.ColorCount())
+	for _, c := range game.Colors() {
+		names[c.ID] = c.Name
+	}
+	return options(names)
+}

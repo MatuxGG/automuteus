@@ -257,7 +257,8 @@ func (bot *Bot) processJob(job task.Job, sett *settings.GuildSettings, premTier 
 			gl.Error("malformed player payload", "err", err)
 			break
 		}
-		if player.Color > 17 || player.Color < 0 {
+		if !game.IsValidColor(player.Color) {
+			gl.Debug("ignoring a player whose color isn't in the color table", "player", player.Name, "color", player.Color)
 			break
 		}
 

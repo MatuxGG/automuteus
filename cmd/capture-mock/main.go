@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/automuteus/automuteus/v8/pkg/capture"
+	"github.com/automuteus/automuteus/v8/pkg/game"
 	socketio "github.com/hesh915/go-socket.io-client"
 )
 
@@ -20,6 +21,12 @@ func main() {
 }
 
 func run() error {
+	// the same custom color table as the bot, to send players in a modded game's colors
+	if colorsPath := os.Getenv("CUSTOM_COLORS_PATH"); colorsPath != "" {
+		if _, err := game.LoadCustomColors(colorsPath); err != nil {
+			return fmt.Errorf("CUSTOM_COLORS_PATH %s: %w", colorsPath, err)
+		}
+	}
 	var program *tea.Program
 	// Socket callbacks only start after connecting, by which time program is set.
 	m := newModel(func(msg tea.Msg) { program.Send(msg) })

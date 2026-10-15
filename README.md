@@ -196,6 +196,7 @@ See [API authorization](internal/api/AUTHORIZATION.md) for scopes, response diff
 | `HOST` | no | Public Galactus URL for capture links; defaults to `http://localhost:8123`. |
 | `WEB_URL` | no | Bot only: public URL of the web dashboard, which `/settings`, `/stats`, and game over summaries link to; defaults to `https://automute.us`. |
 | `AUTOMUTEUS_OFFICIAL` | no | Same presence-based official mode as the bot; must match the bot deployment. |
+| `CUSTOM_COLORS_PATH` | no | TOML file of colors added by a mod, shared with the bot; see [Custom player colors](#custom-player-colors). |
 
 `/live` checks the API process; `/ready` checks Redis and Postgres. Both are served
 on the API port. The process drains HTTP requests on SIGTERM/SIGINT.
@@ -411,6 +412,23 @@ otherwise every guild falls back to the default settings. See
 SIGTERM, so point readiness probes at it to stop routing new capture clients to a
 replica that is shutting down. The container runs the binary as PID 1 (exec-form
 `ENTRYPOINT`) so the signal is delivered directly; keep it that way.
+
+### Custom player colors
+
+Mods can add player colors beyond the 18 vanilla ones. The bot ignores players whose color it doesn't know, so they
+are never muted or listed. To support a mod, list its colors in a TOML file (see
+[the example](assets/custom-colors.example.toml)) and set `CUSTOM_COLORS_PATH` to it on the bot and the API, mounting
+any emoji images alongside it. The capture mock reads the same variable, to send players in those colors.
+
+Each custom color needs two emojis in the emoji guild (`EMOJI_GUILD_ID`, or the first guild the bot joins), which
+the bot uploads from the configured images when they are missing. With the vanilla emojis that makes
+`2 × (18 + custom colors)` emojis: a guild's 50 static emoji slots hold 7 custom colors, and 100 at boost level 1
+hold 32. When the guild runs out of slots, the bot uploads alive emojis before dead ones, logs how many are missing,
+and shows those as ❔; players are still muted as usual. It tries again the next time it starts. A table of more than 25 colors exceeds what
+Discord allows in `/link`'s choices, so the color is typed instead, and the status message's color select lists only
+the colors of the game's players.
+
+The capture must also report the mod's colors; the bot only accepts the IDs the table defines.
 
 ### Capture mock development client
 

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/automuteus/automuteus/v8/internal/api"
+	"github.com/automuteus/automuteus/v8/pkg/game"
 	"github.com/automuteus/automuteus/v8/pkg/locale"
 	"github.com/automuteus/automuteus/v8/pkg/logging"
 	pgstorage "github.com/automuteus/automuteus/v8/pkg/storage"
@@ -94,6 +95,14 @@ func run(ctx context.Context) error {
 		return err
 	}
 	log.Printf("api %s-%s", version, commit)
+	// stats name players' colors from the same table as the bot
+	if colorsPath := os.Getenv("CUSTOM_COLORS_PATH"); colorsPath != "" {
+		custom, err := game.LoadCustomColors(colorsPath)
+		if err != nil {
+			return fmt.Errorf("CUSTOM_COLORS_PATH %s: %w", colorsPath, err)
+		}
+		log.Printf("Loaded %d custom colors from %s", len(custom), colorsPath)
+	}
 	// Settings validation checks languages against the embedded translations; load them before the first request.
 	locale.InitLang("")
 	startupCtx, cancel := context.WithTimeout(ctx, time.Minute)
