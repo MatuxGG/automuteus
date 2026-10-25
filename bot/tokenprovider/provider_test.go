@@ -421,6 +421,39 @@ func TestTokenUsable_FollowsDiscordBucketAndBlacklist(t *testing.T) {
 	}
 }
 
+func TestReserveToken_StopsAtRemainingBudget(t *testing.T) {
+	h := newHarness(t, time.Second)
+	sess, err := discordgo.New("Bot fake")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Discord reports 3 requests left in the guild-member bucket for a while
+	bucket := sess.Ratelimiter.LockBucket(discordgo.EndpointGuildMember(testGuild, ""))
+	if err := bucket.Release(http.Header{
+		"X-Ratelimit-Remaining":   []string{"3"},
+		"X-Ratelimit-Reset-After": []string{"5"},
+		"Date":                    []string{time.Now().UTC().Format(http.TimeFormat)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if !h.tp.reserveToken(testGuild, "tok", sess) {
+			t.Fatalf("reservation %d refused with budget left", i+1)
+		}
+	}
+	if h.tp.reserveToken(testGuild, "tok", sess) {
+		t.Fatal("reservation beyond the remaining budget should be refused, so the change falls back to the primary bot")
+	}
+	if !h.tp.reserveToken("2", "tok", sess) {
+		t.Error("reservations are per guild")
+	}
+	h.tp.releaseToken(testGuild, "tok")
+	if !h.tp.reserveToken(testGuild, "tok", sess) {
+		t.Error("a released reservation should free budget")
+	}
+}
+
 // Benchmarks. The interesting numbers are ns/op (how long a batch blocks the game loop), publishes/op (capture tasks
 // sent to a client that will never act on them), and blacklists/op (redundant blacklist writes). Compare
 // before/after with benchstat.

@@ -47,6 +47,35 @@ func (tokenProvider *TokenProvider) tokenUsable(guildID, hToken string, sess *di
 	return true
 }
 
+// reserveToken claims one request of a usable worker's guild-member budget before the request is sent. discordgo
+// only lowers a bucket's remaining count once a request holds the bucket, so the batch workers, which run
+// concurrently, would otherwise all pick the same worker, queue behind its rate limit and never fall back to the
+// primary bot. Callers release the reservation with releaseToken once the request is done.
+func (tokenProvider *TokenProvider) reserveToken(guildID, hToken string, sess *discordgo.Session) bool {
+	if !tokenProvider.tokenUsable(guildID, hToken, sess) {
+		return false
+	}
+	k := guildID + ":" + hToken
+	tokenProvider.reserveMu.Lock()
+	defer tokenProvider.reserveMu.Unlock()
+	bucket := sess.Ratelimiter.GetBucket(discordgo.EndpointGuildMember(guildID, ""))
+	if wait := sess.Ratelimiter.GetWaitTime(bucket, tokenProvider.reserved[k]+1); wait > 0 {
+		tokenProvider.logger(guildID).Debug("secondary token budget already reserved; skipping", "token", hToken, "reserved", tokenProvider.reserved[k])
+		return false
+	}
+	tokenProvider.reserved[k]++
+	return true
+}
+
+func (tokenProvider *TokenProvider) releaseToken(guildID, hToken string) {
+	k := guildID + ":" + hToken
+	tokenProvider.reserveMu.Lock()
+	defer tokenProvider.reserveMu.Unlock()
+	if tokenProvider.reserved[k]--; tokenProvider.reserved[k] <= 0 {
+		delete(tokenProvider.reserved, k)
+	}
+}
+
 func (tokenProvider *TokenProvider) attemptOnSecondaryTokens(guildID, userID string, tokenSubset map[string]struct{}, request task.UserModify) string {
 	l := tokenProvider.logger(guildID).With("user", userID)
 	if len(tokenProvider.activeSessions) > 0 {
@@ -55,6 +84,7 @@ func (tokenProvider *TokenProvider) attemptOnSecondaryTokens(guildID, userID str
 			// Maintenance yields briefly to workers currently handling voice traffic.
 			tokenProvider.pauseWorker(hToken, 5*time.Second)
 			err := task.ApplyMuteDeaf(sess, guildID, userID, request.Mute, request.Deaf)
+			tokenProvider.releaseToken(guildID, hToken)
 			if err != nil {
 				l.Error("secondary bot voice change failed", "token", hToken, "err", err)
 				tokenProvider.metrics.RecordWorkerFailure()

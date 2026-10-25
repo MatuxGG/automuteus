@@ -39,6 +39,11 @@ type TokenProvider struct {
 	sessionLock         sync.RWMutex
 	taskTimeoutMs       time.Duration
 
+	// reserved counts, per guild and hashed token, worker requests that were picked but are not finished yet; see
+	// reserveToken.
+	reserveMu sync.Mutex
+	reserved  map[string]int
+
 	// applyPrimary, when set, replaces the Discord API call the primary bot makes to mute/deafen a user. Tests use
 	// it to observe the fallback path without a live session.
 	applyPrimary func(guildID, userID string, mute, deaf bool) error
@@ -72,6 +77,7 @@ func NewTokenProvider(client *redis.Client, sess *discordgo.Session, taskTimeout
 		taskTimeoutMs:       taskTimeout,
 		metrics:             server.DefaultMetrics,
 		memberships:         make(map[string]*workerMembership),
+		reserved:            make(map[string]int),
 	}
 }
 
@@ -126,7 +132,7 @@ func (tokenProvider *TokenProvider) getSession(guildID string, hTokenSubset map[
 	for hToken, sess := range tokenProvider.activeSessions {
 		// if we have already used this token successfully, or haven't set any restrictions
 		if hTokenSubset == nil || mapHasEntry(hTokenSubset, hToken) {
-			if tokenProvider.tokenUsable(guildID, hToken, sess) {
+			if tokenProvider.reserveToken(guildID, hToken, sess) {
 				return sess, hToken
 			}
 		}
